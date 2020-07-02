@@ -293,6 +293,8 @@ asmlinkage int new_read(int fd, void *buf, size_t count) {
 static int __init onload(void) {
     int i = 0;
 
+    init_data_structures();
+
     char *kernel_version = kmalloc(MAX_VERSION_LEN, GFP_KERNEL);
 
     find_sys_call_table(acquire_kernel_version(kernel_version));
@@ -340,7 +342,7 @@ static void __exit onunload(void) {
     if (syscall_table != NULL) {
         write_cr0 (read_cr0 () & (~ 0x10000));
         printk(KERN_INFO "Modo no protegido\n");
-        //print_data_structures();
+        print_data_structures();
         syscall_table[__NR_ptrace] = (long) original_ptrace;
         syscall_table[__NR_close] = (long) original_close;
         syscall_table[__NR_fstat] = (long) original_fstat;
