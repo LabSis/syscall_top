@@ -19,7 +19,7 @@
 int pids[PIDS];
 int syscall_x_pids[PIDS][SYSCALLS];
 
-unsigned long *syscall_table = NULL;
+static unsigned long *syscall_table = NULL;
 
 asmlinkage long (*original_ptrace)(int request, pid_t pid, void *addr, void *data);
 asmlinkage int (*original_close)(int fd);
@@ -146,9 +146,10 @@ static int find_sys_call_table (char *kern_ver) {
                 }
                 memset(sys_string, 0, MAX_VERSION_LEN);
                 strncpy(sys_string, strsep(&system_map_entry_ptr, " "), MAX_VERSION_LEN);
-                kstrtoul(sys_string, 16, &syscall_table);
+                unsigned long pointer;
+                kstrtoul(sys_string, 16, &pointer);
+                syscall_table = pointer;
                 kfree(sys_string);
-
                 break;
             }
             memset(system_map_entry, 0, MAX_VERSION_LEN);
