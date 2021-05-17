@@ -5,16 +5,27 @@
 #include <linux/fs.h>      /* filp_open */
 #include <linux/slab.h>    /* kmalloc */
 #include <linux/sched.h>
+#include <linux/cdev.h>
 #include <asm/paravirt.h> /* write_cr0 */
 #include <asm/uaccess.h>  /* get_fs, set_fs */
+#include <linux/proc_fs.h>
 
 #include "detector.h"
 
-#define PROC_V    "/proc/version"
+#define PROC_V "/proc/version"
 #define BOOT_PATH "/boot/System.map-"
-#define MAX_VERSION_LEN   256
+#define MAX_VERSION_LEN 256
 #define PIDS 500
 #define SYSCALLS 400
+#define BUFFER_SIZE 1024
+#define DEVICENAME "syscall_top"
+
+static struct file_operations file_ops;
+
+static int output_buffer[BUFFER_SIZE];
+struct cdev *mcdev;     /* this is the name of my char driver that i will be registering*/
+int major_number;       /* will store the major number extracted by dev_t*/
+dev_t dev_num;          /* will hold the major number that the kernel gives*/
 
 int pids[PIDS];
 int syscall_x_pids[PIDS][SYSCALLS];
@@ -29,6 +40,70 @@ asmlinkage int (*original_stat)(const char __user *filename, struct stat __user 
 asmlinkage int (*original_write)(unsigned int, const char __user *, size_t);
 asmlinkage int (*original_read)(int fd, void *buf, size_t count);
 
+
+
+
+static void load_output_buffer(void) {
+    int i;
+    int j;
+    int k = 0;
+    for (i = 0; i < PIDS; i++) {
+        for (j = 0; j < SYSCALLS; j++) {
+            if (pids[i] > 0 && syscall_x_pids[i][j] > 0) {
+                if (k < BUFFER_SIZE) {
+                    output_buffer[k] = pids[i];
+                    output_buffer[k + 1] = j;
+                    output_buffer[k + 2] = syscall_x_pids[i][j];
+                    k += 3;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
+static int syscall_top_open(struct inode *inode, struct file *filp)
+{
+    printk(KERN_INFO "charDev : device opened succesfully\n");
+    return 0;
+}
+
+static ssize_t syscall_top_write(struct file *file, const char *buf, size_t count, loff_t *pos)
+{
+    printk("%.*s", count, buf);
+    return count;
+}
+
+/*
+    Retorna los datos en un array y cada 3 elementos se repite: pid, syscall, cantidad.
+*/
+static ssize_t syscall_top_read(struct file *fp, char *buff, size_t length, loff_t *ppos) {
+    int maxbytes;           /* maximum bytes that can be read from ppos to BUFFER_SIZE*/
+    int bytes_to_read;      /* gives the number of bytes to read*/
+    int bytes_read;         /* number of bytes actually read*/
+    int i;
+    maxbytes = BUFFER_SIZE - *ppos;
+    if (maxbytes > length)
+            bytes_to_read = length;
+    else
+            bytes_to_read = maxbytes;
+    if (bytes_to_read == 0)
+            printk(KERN_INFO "charDev : Reached the end of the device\n");
+
+    load_output_buffer();
+    for (i = 0; i < bytes_to_read / 4; i++) {
+        printk(KERN_INFO "%i\n", output_buffer[i]);
+    }
+    bytes_read = bytes_to_read - copy_to_user(buff, output_buffer + *ppos, bytes_to_read);
+    printk(KERN_INFO "charDev : device has been read %d\n", bytes_read);
+
+    *ppos += bytes_read;
+    printk(KERN_INFO "charDev : device has been read\n");
+
+    return bytes_read;
+}
 
 static void init_data_structures(void) {
     int i;
@@ -50,7 +125,6 @@ int search(int* pids, int pid) {
     }
     return -1;
 }
-
 
 static void print_data_structures(void) {
     int i;
@@ -292,7 +366,41 @@ asmlinkage int new_read(int fd, void *buf, size_t count) {
 
 static int __init onload(void) {
     int i = 0;
+    
+    /* we will get the major number dynamically this is recommended please read ldd3*/
+    int ret = alloc_chrdev_region(&dev_num, 0, 1, DEVICENAME);
+    if (ret < 0) {
+        printk(KERN_ALERT " charDev : failed to allocate major number\n");
+        return ret;
+    } else {
+        printk(KERN_INFO " charDev : mjor number allocated succesful\n");
+    }
+    major_number = MAJOR(dev_num);
+    printk(KERN_INFO "charDev : major number of our device is %d\n", major_number);
+    printk(KERN_INFO "charDev : to use mknod /dev/%s c %d 0\n", DEVICENAME, major_number);
+    
+    /* Inicializo file_operations */
+    /*struct proc_dir_entry *entry = proc_create("printk", 0, NULL, &file_ops);
+    if (!entry) return -ENOENT;*/
+    
+    mcdev = cdev_alloc(); /* create, allocate and initialize our cdev structure*/
+    mcdev->ops = &file_ops;   /* fops stand for our file operations*/
+    mcdev->owner = THIS_MODULE;
+    /*file_ops.write = syscall_top_write;*/
+    file_ops.open = syscall_top_open;
+    file_ops.read = syscall_top_read;
+    
+    /* we have created and initialized our cdev structure now we need to
+        add it to the kernel*/
+    ret = cdev_add(mcdev, dev_num, 1);
+    if (ret < 0) {
+        printk(KERN_ALERT "charDev : device adding to the kerknel failed\n");
+        return ret;
+    } else {
+        printk(KERN_INFO "charDev : device additin to the kernel succesful\n");
+    }
 
+    /* Inicializo estructura de datos */
     init_data_structures();
 
     char *kernel_version = kmalloc(MAX_VERSION_LEN, GFP_KERNEL);
@@ -339,6 +447,13 @@ static int __init onload(void) {
 
 static void __exit onunload(void) {
 	printk(KERN_INFO "Descargando\n");
+	cdev_del(mcdev); /*removing the structure that we added previously*/
+	printk(KERN_INFO " CharDev : removed the mcdev from kernel\n");
+	
+	unregister_chrdev_region(dev_num, 1);
+	printk(KERN_INFO  " CharDev : unregistered the device numbers\n");
+    printk(KERN_ALERT " charDev : character driver is exiting\n");
+	
     if (syscall_table != NULL) {
         write_cr0 (read_cr0 () & (~ 0x10000));
         printk(KERN_INFO "Modo no protegido\n");
