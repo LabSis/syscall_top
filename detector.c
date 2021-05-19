@@ -17,7 +17,7 @@
 #define MAX_VERSION_LEN 256
 #define PIDS 500
 #define SYSCALLS 400
-#define BUFFER_SIZE 1024
+#define BUFFER_SIZE 8192
 #define DEVICENAME "syscall_top"
 
 static struct file_operations file_ops;
@@ -43,10 +43,22 @@ asmlinkage int (*original_read)(int fd, void *buf, size_t count);
 
 
 
-static void load_output_buffer(void) {
-    int i;
-    int j;
-    int k = 0;
+static void load_output_buffer(int from) {
+    /*
+    Esto se comenta porque hay celdas de la matriz syscall_x_pids que se saltean.
+    Así que no va a funcionar correctamente.
+    if (from == 0) {
+        from = 1;
+    }
+    int j = (from - 1) % SYSCALLS;
+    int i = (from - ((from -1) % SYSCALLS)) / SYSCALLS;*/
+    int i = 0;
+    int j = 0;
+    int k;
+    for (k = 0; k < BUFFER_SIZE; k++) {
+        output_buffer[k] = 0;
+    }
+    k = 0;
     for (i = 0; i < PIDS; i++) {
         for (j = 0; j < SYSCALLS; j++) {
             if (pids[i] > 0 && syscall_x_pids[i][j] > 0) {
@@ -85,17 +97,20 @@ static ssize_t syscall_top_read(struct file *fp, char *buff, size_t length, loff
     int bytes_read;         /* number of bytes actually read*/
     int i;
     maxbytes = BUFFER_SIZE - *ppos;
-    if (maxbytes > length)
-            bytes_to_read = length;
-    else
-            bytes_to_read = maxbytes;
-    if (bytes_to_read == 0)
-            printk(KERN_INFO "charDev : Reached the end of the device\n");
-
-    load_output_buffer();
-    for (i = 0; i < bytes_to_read / 4; i++) {
-        printk(KERN_INFO "%i\n", output_buffer[i]);
+    if (maxbytes > length) {
+        bytes_to_read = length;
+    } else {
+        bytes_to_read = maxbytes;
     }
+    if (bytes_to_read == 0) {
+        printk(KERN_INFO "charDev : Reached the end of the device\n");
+    }
+
+    printk(KERN_INFO "Reading ---- length: %zu - ppos: %d\n", length, *ppos);
+    load_output_buffer(*ppos);
+    /*for (i = 0; i < bytes_to_read / 4; i++) {
+        printk(KERN_INFO "%i\n", output_buffer[i]);
+    }*/
     bytes_read = bytes_to_read - copy_to_user(buff, output_buffer + *ppos, bytes_to_read);
     printk(KERN_INFO "charDev : device has been read %d\n", bytes_read);
 
