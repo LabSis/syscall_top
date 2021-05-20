@@ -1,20 +1,24 @@
+#!/usr/bin/python3
 import struct
 import psutil
+from curses import wrapper
+import time
+import threading
 
 processes_from_psutil = []
 
 
-def generate_processes_list():
-    psutil.process_iter(attrs=None, ad_value=None)
-    
-    # Itero por los procesos reales y los mapeo adentro de la estructura.
-    for proc in psutil.process_iter():
-        try:
-            process_name = proc.name()
-            process_id = proc.pid
-            processes_from_psutil.append((process_id, process_name))
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-           pass
+def show_data(stdscr, processes):
+    stdscr.clear()
+    stdscr.addstr(0, 0, "SyscallTop")
+    stdscr.addstr(1, 0, "PID\tread\twrite\topen\tclose\tother\ttotal\tname")
+    stdscr.addstr(2, 0, "=" * 80)
+    i = 3
+    for pid in processes:
+        process = processes[pid]
+        stdscr.addstr(i, 0, "%s" % str(process))
+        i += 1
+    stdscr.refresh()
 
 
 def get_process_name_from_pid(pid_to_search):
@@ -36,24 +40,26 @@ class Process():
 
     def __str__(self):
         total_count = 0
+        other_count = 0
         read_count = 0
         write_count = 0
         open_count = 0
         close_count = 0
+        max_count = 0
         for syscall in self.syscalls:
             syscall_index = syscall[0]
             if syscall_index == 0:
-                read_count += 1
-            if syscall_index == 0:
-                write_count += 1
-            if syscall_index == 0:
-                open_count += 1
-            if syscall_index == 0:
-                close_count += 1
+                read_count += syscall[1]
+            if syscall_index == 1:
+                write_count += syscall[1]
+            if syscall_index == 2:
+                open_count += syscall[1]
+            if syscall_index == 3:
+                close_count += syscall[1]
             total_count += syscall[1]
-            
-        return "%d\t%d\t%d\t%d\t%d\t%d\t%s" % (self.pid, read_count, write_count, 
-                                            open_count, close_count,
+        other_count = total_count - read_count - write_count - open_count - close_count
+        return "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s" % (self.pid, read_count, write_count, 
+                                            open_count, close_count, other_count,
                                             total_count, self.name)
 
 
@@ -84,15 +90,28 @@ def read_syscalls_count():
             else:
                 process = Process(pid, process_name, [(syscall_index, count)])
                 processes[pid] = process
+    f.close()
+    return processes
 
-    print("PID\tread\twrite\topen\tclose\ttotal\tname")
-    print("=" * 80)
-    for pid in processes:
-        process = processes[pid]
-        print("%s" % str(process))
+def task(stdscr):
+    while True:
+        processes = read_syscalls_count()
+        show_data(stdscr, processes)
+        time.sleep(2)
 
+def main(stdscr):
+    stdscr.clear()
+    
+    t = threading.Thread(target=task, args=(stdscr,))
+    t.daemon = True
+    t.start()
+
+    time.sleep(1)
+
+    while True:
+        c = stdscr.getch()
+        if c == ord("q"):
+            break
 
 if __name__ == "__main__":
-    #generate_processes_list()
-    read_syscalls_count()
-
+    wrapper(main)
