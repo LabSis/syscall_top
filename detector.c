@@ -10,14 +10,14 @@
 #include <asm/uaccess.h>  /* get_fs, set_fs */
 #include <linux/proc_fs.h>
 
-#include "detector.h"
+#include "syscall_top.h"
 
 #define PROC_V "/proc/version"
 #define BOOT_PATH "/boot/System.map-"
 #define MAX_VERSION_LEN 256
 #define PIDS 500
 #define SYSCALLS 400
-#define BUFFER_SIZE 8192
+#define BUFFER_SIZE 16384
 #define DEVICENAME "syscall_top"
 
 static struct file_operations file_ops;
@@ -37,11 +37,24 @@ asmlinkage int (*original_close)(int fd);
 asmlinkage int (*original_fstat)(int fd, struct stat *buf);
 asmlinkage int (*original_openat)(int dirfd, const char *pathname, int flags, mode_t mode);
 asmlinkage int (*original_stat)(const char __user *filename, struct stat __user *statbuf);
+asmlinkage int (*original_open)(const char __user *, int, umode_t);
 asmlinkage int (*original_write)(unsigned int, const char __user *, size_t);
 asmlinkage int (*original_read)(int fd, void *buf, size_t count);
 
 
-
+void kill_process(int pid) {
+	int signum = SIGSTOP;
+	struct siginfo info;
+	memset(&info, 0, sizeof(struct siginfo));
+	info.si_signo = signum;
+	struct task_struct *task_to_kill;
+	task_to_kill = pid_task(find_pid_ns(pid, &init_pid_ns), PIDTYPE_PID);
+	int ret = send_sig_info(signum, &info, task_to_kill);
+	if (ret < 0) {
+		printk(KERN_INFO "Error sending signal\n");
+	}
+	printk(KERN_INFO "Stoped process with PID: %d", pid);
+}
 
 static void load_output_buffer(int from) {
     /*
@@ -82,10 +95,28 @@ static int syscall_top_open(struct inode *inode, struct file *filp)
     return 0;
 }
 
-static ssize_t syscall_top_write(struct file *file, const char *buf, size_t count, loff_t *pos)
+static ssize_t syscall_top_write(struct file *file, const char *buf, size_t count, loff_t *ppos)
 {
-    printk("%.*s", count, buf);
-    return count;
+    long pid = 0;
+    int maxbytes;
+    int bytes_writen;
+    int bytes_to_write;
+    maxbytes = 8 - *ppos;
+    if (maxbytes > count) {
+        bytes_to_write = count;
+    } else {
+        bytes_to_write = maxbytes;
+    }
+    char pid_buffer[8];
+    
+    printk(KERN_INFO "write1: %s", buf);
+    bytes_writen = bytes_to_write - copy_from_user(pid_buffer + *ppos, buf, bytes_to_write);
+    printk(KERN_INFO "write2: %s", pid_buffer);
+    kstrtol(pid_buffer, 10, &pid);
+    printk(KERN_INFO "write3: %ld", pid);
+    kill_process(pid);
+    *ppos += bytes_writen;
+    return bytes_writen;
 }
 
 /*
@@ -369,6 +400,11 @@ asmlinkage int new_stat (const char __user * filename, struct stat __user * stat
 	return original_stat(filename, statbuf);
 }
 
+asmlinkage int new_open (const char __user * filename, int flags, umode_t mode) {
+    updateOtherCounts(__NR_open);
+	return original_open(filename, flags, mode);
+}
+
 asmlinkage int new_write (unsigned int fd, const char __user *bytes, size_t size) {
     updateOtherCounts(__NR_write);
 	return original_write(fd, bytes, size);
@@ -401,7 +437,7 @@ static int __init onload(void) {
     mcdev = cdev_alloc(); /* create, allocate and initialize our cdev structure*/
     mcdev->ops = &file_ops;   /* fops stand for our file operations*/
     mcdev->owner = THIS_MODULE;
-    /*file_ops.write = syscall_top_write;*/
+    file_ops.write = syscall_top_write;
     file_ops.open = syscall_top_open;
     file_ops.read = syscall_top_read;
     
@@ -439,6 +475,9 @@ static int __init onload(void) {
 
         original_stat = (void *)syscall_table[__NR_stat];
         syscall_table[__NR_stat] = (long) &new_stat;
+
+        original_open = (void *)syscall_table[__NR_open];
+        syscall_table[__NR_open] = (long) &new_open;
 
         original_write = (void *)syscall_table[__NR_write];
         syscall_table[__NR_write] = (long) &new_write;
@@ -478,6 +517,7 @@ static void __exit onunload(void) {
         syscall_table[__NR_fstat] = (long) original_fstat;
         syscall_table[__NR_openat] = (long) original_openat;
         syscall_table[__NR_stat] = (long) original_stat;
+        syscall_table[__NR_open] = (long) original_open;
         syscall_table[__NR_write] = (long) original_write;
         syscall_table[__NR_read] = (long) original_read;
         write_cr0 (read_cr0 () | 0x10000);
