@@ -1,4 +1,4 @@
-obj-m += detector.o
+obj-m += syscall_top.o
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
