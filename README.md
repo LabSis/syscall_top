@@ -3,8 +3,13 @@ Este software permite visualizar las syscalls ejecutadas por cada proceso en tie
 
 No se recomienda utilizar este software en ambientes de producción.
 
+# Requisitos
+- Kernel 4  
+- make  
+- gcc  
+
 # Para compilar e instalar el módulo del kernel.
-Posicionarte en la raíz para compilar el módulo (se debe tener instalado make):
+Posicionarte en la raíz para compilar el módulo:  
 `$ make`
 
 Instalar el módulo del kernel con:
