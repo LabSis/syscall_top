@@ -4,11 +4,11 @@ Este software permite visualizar las syscalls ejecutadas por cada proceso en tie
 No se recomienda utilizar este software en ambientes de producción.
 
 # Para compilar e instalar el módulo del kernel.
-Posicionarte en la raíz para compilar el módulo:
+Posicionarte en la raíz para compilar el módulo (se debe tener instalado make):
 `$ make`
 
 Instalar el módulo del kernel con:
-`$ sudo insmod detector.ko`
+`$ sudo insmod syscall_top.ko`
 
 Crear el archivo de caracteres o dispositivo de caracteres con:
 `$ sudo mknod /dev/syscall_top c 246 0`
