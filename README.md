@@ -4,7 +4,7 @@ Este software permite visualizar las syscalls ejecutadas por cada proceso en tie
 No se recomienda utilizar este software en ambientes de producción.
 
 # Requisitos
-- Kernel 4  
+- Kernel 4.4  
 - make  
 - gcc  
 
