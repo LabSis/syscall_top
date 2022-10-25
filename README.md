@@ -1,7 +1,23 @@
 # syscall_top
-Este software permite visualizar las syscalls ejecutadas por cada proceso en tiempo real. Además, permite la configuración de reglas, por ejemplo, matar al proceso que supera cierta cantidad de syscalls.
+Este software permite visualizar las syscalls ejecutadas por cada proceso en tiempo real. Además, permite la configuración de reglas, por ejemplo, matar al proceso que supera cierta cantidad de syscalls. Se puede utilizar este módulo para la detección en tiempo real de Ransomwares.
 
-No se recomienda utilizar este software en ambientes de producción.
+Por ahora, no se recomienda utilizar este software en ambientes de producción.
+
+# Reglas
+Las reglas deben especificarse en el archivo `rules.ini` y deben seguir la siguiente especificación:
+```
+[SIGNAL]
+syscall=threshold/<seconds>
+
+[SUBSCRIBERS-SYSUSR1]
+read=10000
+write=10000
+password=<password>
+
+[SPECIAL_SETTINGS]
+ram_backup=100M
+hard_disk_backup=100M
+```
 
 # Requisitos
 - Kernel 4.4  
