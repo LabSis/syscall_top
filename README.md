@@ -57,6 +57,3 @@ Contador de syscalls con strace: https://github.com/LabSis/contador_syscalls
 
 # Contribuir
 Si querés contribuir, sólo hazlo. ¡Muchas gracias!
-
-# Publicaciones relacionadas
-https://seclabsis.frc.utn.edu.ar/publicaciones/index.php
